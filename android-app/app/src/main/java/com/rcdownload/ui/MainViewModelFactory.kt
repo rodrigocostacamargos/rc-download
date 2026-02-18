@@ -4,46 +4,28 @@ import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import com.rcdownload.BuildConfig
-import com.rcdownload.data.api.LocalDownloadService
-import com.rcdownload.data.api.YouTubeApiService
 import com.rcdownload.data.db.AppDatabase
+import com.rcdownload.data.extractor.DownloaderImpl
 import com.rcdownload.data.repository.VideoRepository
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
+import org.schabi.newpipe.extractor.NewPipe
 
 /**
  * Constrói o ViewModel com todas as dependências necessárias.
- * Em projetos maiores, substituir por Hilt/Dagger.
+ * Inicializa o NewPipe Extractor com o downloader OkHttp.
  */
 class MainViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        Log.i(TAG, "Criando ViewModel — LOCAL_SERVICE_URL=${BuildConfig.LOCAL_SERVICE_URL}")
         val client = buildOkHttpClient()
 
-        val youTubeApi = Retrofit.Builder()
-            .baseUrl("https://www.googleapis.com/youtube/v3/")
-            .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(YouTubeApiService::class.java)
-
-        val localApi = Retrofit.Builder()
-            .baseUrl(BuildConfig.LOCAL_SERVICE_URL)   // lido de local.properties
-            .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(LocalDownloadService::class.java)
+        Log.i(TAG, "Inicializando NewPipe Extractor")
+        NewPipe.init(DownloaderImpl(client))
 
         val repository = VideoRepository(
-            youTubeApiService   = youTubeApi,
-            localDownloadService = localApi,
-            downloadHistoryDao  = AppDatabase.getInstance(context).downloadHistoryDao(),
-            apiKey              = BuildConfig.YOUTUBE_API_KEY  // lido de local.properties
+            downloadHistoryDao = AppDatabase.getInstance(context).downloadHistoryDao()
         )
 
         return MainViewModel(repository) as T
@@ -51,7 +33,7 @@ class MainViewModelFactory(private val context: Context) : ViewModelProvider.Fac
 
     private fun buildOkHttpClient(): OkHttpClient {
         val logging = HttpLoggingInterceptor { msg -> Log.d(TAG, msg) }.apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = HttpLoggingInterceptor.Level.BASIC
         }
         return OkHttpClient.Builder()
             .addInterceptor(logging)

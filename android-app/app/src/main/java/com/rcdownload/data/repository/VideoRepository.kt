@@ -1,85 +1,74 @@
 package com.rcdownload.data.repository
 
 import android.util.Log
-import com.rcdownload.data.api.LocalDownloadService
-import com.rcdownload.data.api.YouTubeApiService
-import com.rcdownload.data.api.models.DownloadRequest
-import com.rcdownload.data.api.models.DownloadStatus
 import com.rcdownload.data.api.models.VideoMetadata
 import com.rcdownload.data.db.DownloadHistoryDao
 import com.rcdownload.data.db.DownloadHistoryEntity
+import com.rcdownload.data.extractor.StreamData
+import com.rcdownload.data.extractor.StreamExtractor
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
+import org.schabi.newpipe.extractor.stream.StreamInfo
+
+private const val TAG = "RCDownload"
 
 /**
  * Único ponto de acesso a dados da UI.
- * Orquestra YouTube API, serviço local de download e banco Room.
+ * Usa NewPipe Extractor para metadados e URLs de stream — sem servidor externo.
  */
-private const val TAG = "RCDownload"
-
 class VideoRepository(
-    private val youTubeApiService: YouTubeApiService,
-    private val localDownloadService: LocalDownloadService,
-    private val downloadHistoryDao: DownloadHistoryDao,
-    private val apiKey: String
+    private val downloadHistoryDao: DownloadHistoryDao
 ) {
+    // StreamInfo cacheado entre fetchVideoMetadata e getStreamData
+    private var cachedStreamInfo: StreamInfo? = null
 
     /**
-     * Consulta a YouTube Data API v3 e retorna os metadados do vídeo.
-     * Falha com mensagem descritiva em caso de vídeo não encontrado ou erro de rede.
+     * Extrai metadados do vídeo via NewPipe (sem API key).
+     * A StreamInfo é cacheada para reutilização em getStreamData.
      */
-    suspend fun fetchVideoMetadata(videoId: String, originalUrl: String): Result<VideoMetadata> =
-        runCatching {
-            Log.d(TAG, "fetchVideoMetadata: videoId=$videoId")
-            val response = youTubeApiService.getVideoMetadata(
-                videoId = videoId,
-                apiKey  = apiKey
-            )
-            val item = response.items?.firstOrNull()
-                ?: error("Vídeo não encontrado. Verifique se a URL é pública e válida.")
+    suspend fun fetchVideoMetadata(url: String): Result<VideoMetadata> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                Log.d(TAG, "fetchVideoMetadata: url=$url")
+                val streamInfo = StreamExtractor.getStreamInfo(url)
+                cachedStreamInfo = streamInfo
 
-            VideoMetadata(
-                videoId      = item.id,
-                title        = item.snippet.title,
-                channelTitle = item.snippet.channelTitle,
-                originalUrl  = originalUrl,
-                license      = item.status.license,
-                thumbnailUrl = item.snippet.thumbnails?.medium?.url
-            ).also { Log.i(TAG, "fetchVideoMetadata: sucesso — title=${it.title}") }
-        }.onFailure { Log.e(TAG, "fetchVideoMetadata: falha", it) }
+                VideoMetadata(
+                    videoId      = streamInfo.id,
+                    title        = streamInfo.name,
+                    channelTitle = streamInfo.uploaderName,
+                    originalUrl  = url,
+                    license      = streamInfo.licence ?: "youtube",
+                    thumbnailUrl = streamInfo.thumbnails.maxByOrNull { it.height }?.url
+                ).also { Log.i(TAG, "fetchVideoMetadata: sucesso — title=${it.title}") }
+            }.onFailure { Log.e(TAG, "fetchVideoMetadata: falha", it) }
+        }
 
     /**
-     * Envia a requisição de download ao serviço local (Flask + yt-dlp).
-     * Retorna o job_id para polling de progresso.
+     * Retorna a URL de stream para o formato solicitado usando a StreamInfo em cache.
+     * Deve ser chamado após fetchVideoMetadata.
      */
-    suspend fun startDownload(url: String, format: String): Result<String> =
-        runCatching {
-            Log.d(TAG, "startDownload: url=$url format=$format")
-            val response = localDownloadService.startDownload(
-                DownloadRequest(url = url, format = format)
-            )
-            response.jobId.also { Log.i(TAG, "startDownload: jobId=$it") }
-        }.onFailure { Log.e(TAG, "startDownload: falha", it) }
+    suspend fun getStreamData(format: String): Result<StreamData> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val streamInfo = cachedStreamInfo
+                    ?: error("Metadados não carregados. Verifique a URL primeiro.")
 
-    /** Consulta o status atual de um job de download. */
-    suspend fun pollDownloadStatus(jobId: String): Result<DownloadStatus> =
-        runCatching {
-            localDownloadService.getDownloadStatus(jobId)
-                .also { Log.d(TAG, "pollDownloadStatus: jobId=$jobId status=${it.status} progress=${it.progress}") }
-        }.onFailure { Log.e(TAG, "pollDownloadStatus: falha jobId=$jobId", it) }
+                Log.d(TAG, "getStreamData: format=$format")
+                val streamData = when (format) {
+                    "audio" -> StreamExtractor.getBestAudioStream(streamInfo)
+                        ?: error("Nenhuma stream de áudio M4A disponível para este vídeo.")
+                    else    -> StreamExtractor.getBestVideoStream(streamInfo)
+                        ?: error("Nenhuma stream de vídeo MP4 disponível para este vídeo.")
+                }
+                Log.i(TAG, "getStreamData: fileName=${streamData.fileName}")
+                streamData
+            }.onFailure { Log.e(TAG, "getStreamData: falha", it) }
+        }
 
-    /** Verifica se o serviço local está acessível antes de tentar download. */
-    suspend fun isLocalServiceAvailable(): Boolean =
-        runCatching { localDownloadService.health() }
-            .onSuccess { Log.i(TAG, "isLocalServiceAvailable: OK") }
-            .onFailure { Log.e(TAG, "isLocalServiceAvailable: falha", it) }
-            .isSuccess
-
-    /** Persiste o registro do download no banco local para histórico e atribuição. */
-    suspend fun saveToHistory(
-        metadata: VideoMetadata,
-        format: String,
-        filePath: String? = null
-    ) {
+    /** Persiste o registro do download no banco local para histórico. */
+    suspend fun saveToHistory(metadata: VideoMetadata, format: String, filePath: String? = null) {
         downloadHistoryDao.insert(
             DownloadHistoryEntity(
                 videoId      = metadata.videoId,

@@ -10,7 +10,6 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.snackbar.Snackbar
-import com.rcdownload.BuildConfig
 import com.rcdownload.data.api.models.VideoMetadata
 import com.rcdownload.databinding.ActivityMainBinding
 import com.rcdownload.ui.MainViewModel
@@ -23,7 +22,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private val viewModel: MainViewModel by viewModels { MainViewModelFactory(this) }
 
-    /** Guarda os metadados do último vídeo verificado para repassar ao startDownload. */
     private var currentMetadata: VideoMetadata? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,13 +44,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnDownloadVideo.setOnClickListener {
-            val url = binding.urlInput.text?.toString()?.trim() ?: return@setOnClickListener
-            currentMetadata?.let { viewModel.startDownload(url, "video", it) }
+            currentMetadata?.let { viewModel.startDownload("video", it) }
         }
 
         binding.btnDownloadAudio.setOnClickListener {
-            val url = binding.urlInput.text?.toString()?.trim() ?: return@setOnClickListener
-            currentMetadata?.let { viewModel.startDownload(url, "audio", it) }
+            currentMetadata?.let { viewModel.startDownload("audio", it) }
         }
 
         binding.btnReset.setOnClickListener { viewModel.reset() }
@@ -66,13 +62,27 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             viewModel.uiState.collect { state ->
                 when (state) {
-                    is UiState.Idle             -> showIdle()
-                    is UiState.LoadingMetadata  -> showLoading("Verificando metadados...")
-                    is UiState.MetadataLoaded   -> showMetadata(state.metadata)
-                    is UiState.Downloading      -> showLoading("Iniciando download...")
-                    is UiState.DownloadProgress -> showProgress(state.progress)
-                    is UiState.DownloadComplete -> showComplete(state.jobId, state.fileName)
-                    is UiState.Error            -> showError(state.message)
+                    is UiState.Idle            -> showIdle()
+                    is UiState.LoadingMetadata -> showLoading("Buscando metadados...")
+                    is UiState.MetadataLoaded  -> showMetadata(state.metadata)
+                    is UiState.PreparingStream -> showLoading("Preparando download...")
+                    is UiState.DownloadEnqueued -> {
+                        val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+                        val req = DownloadManager.Request(Uri.parse(state.streamData.url))
+                            .setTitle(state.streamData.fileName)
+                            .setDescription("RC Download")
+                            .setMimeType(state.streamData.mimeType)
+                            .setNotificationVisibility(
+                                DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                            )
+                            .setDestinationInExternalPublicDir(
+                                Environment.DIRECTORY_DOWNLOADS,
+                                state.streamData.fileName
+                            )
+                        dm.enqueue(req)
+                        showDownloadEnqueued(state.streamData.fileName)
+                    }
+                    is UiState.Error           -> showError(state.message)
                 }
             }
         }
@@ -82,23 +92,23 @@ class MainActivity : AppCompatActivity() {
 
     private fun showIdle() {
         currentMetadata = null
-        binding.metadataCard.visibility   = View.GONE
+        binding.metadataCard.visibility    = View.GONE
         binding.downloadButtons.visibility = View.GONE
-        binding.progressBar.visibility    = View.GONE
-        binding.tvProgress.visibility     = View.GONE
-        binding.tvStatus.visibility       = View.GONE
-        binding.btnVerify.isEnabled       = true
-        binding.btnReset.visibility       = View.GONE
+        binding.progressBar.visibility     = View.GONE
+        binding.tvProgress.visibility      = View.GONE
+        binding.tvStatus.visibility        = View.GONE
+        binding.btnVerify.isEnabled        = true
+        binding.btnReset.visibility        = View.GONE
     }
 
     private fun showLoading(message: String) {
-        binding.progressBar.visibility    = View.VISIBLE
         binding.progressBar.isIndeterminate = true
-        binding.tvProgress.visibility     = View.VISIBLE
-        binding.tvProgress.text           = message
-        binding.tvStatus.visibility       = View.GONE
-        binding.btnVerify.isEnabled       = false
-        binding.downloadButtons.visibility = View.GONE
+        binding.progressBar.visibility      = View.VISIBLE
+        binding.tvProgress.text             = message
+        binding.tvProgress.visibility       = View.VISIBLE
+        binding.tvStatus.visibility         = View.GONE
+        binding.btnVerify.isEnabled         = false
+        binding.downloadButtons.visibility  = View.GONE
     }
 
     private fun showMetadata(metadata: VideoMetadata) {
@@ -106,56 +116,35 @@ class MainActivity : AppCompatActivity() {
         binding.tvTitle.text   = metadata.title
         binding.tvChannel.text = "Canal: ${metadata.channelTitle}"
         binding.tvLicense.text = "Licença: ${metadata.licenseDisplayName}"
-        binding.metadataCard.visibility   = View.VISIBLE
+        binding.metadataCard.visibility    = View.VISIBLE
         binding.downloadButtons.visibility = View.VISIBLE
-        binding.progressBar.visibility    = View.GONE
-        binding.tvProgress.visibility     = View.GONE
-        binding.tvStatus.visibility       = View.GONE
-        binding.btnVerify.isEnabled       = true
-        binding.btnReset.visibility       = View.VISIBLE
-    }
-
-    private fun showProgress(progress: Int) {
-        binding.progressBar.isIndeterminate = false
-        binding.progressBar.progress      = progress
-        binding.progressBar.visibility    = View.VISIBLE
-        binding.tvProgress.text           = "$progress%"
-        binding.tvProgress.visibility     = View.VISIBLE
-        binding.tvStatus.visibility       = View.GONE
-        binding.downloadButtons.visibility = View.GONE
-    }
-
-    private fun showComplete(jobId: String, fileName: String) {
         binding.progressBar.visibility     = View.GONE
         binding.tvProgress.visibility      = View.GONE
-        binding.tvStatus.text              = "Download concluído!"
+        binding.tvStatus.visibility        = View.GONE
+        binding.btnVerify.isEnabled        = true
+        binding.btnReset.visibility        = View.VISIBLE
+    }
+
+    private fun showDownloadEnqueued(fileName: String) {
+        binding.progressBar.visibility     = View.GONE
+        binding.tvProgress.visibility      = View.GONE
+        binding.tvStatus.text              = "Download enfileirado!"
         binding.tvStatus.visibility        = View.VISIBLE
         binding.downloadButtons.visibility = View.VISIBLE
-
-        val fileUrl = "${BuildConfig.LOCAL_SERVICE_URL}file/$jobId"
-        val mimeType = when {
-            fileName.endsWith(".mp3") -> "audio/mpeg"
-            fileName.endsWith(".mp4") -> "video/mp4"
-            else                     -> "*/*"
-        }
-        val request = DownloadManager.Request(Uri.parse(fileUrl))
-            .setTitle(fileName)
-            .setDescription("RC Download")
-            .setMimeType(mimeType)
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-        (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
-
-        Snackbar.make(binding.root, "Salvando em Downloads: $fileName", Snackbar.LENGTH_LONG).show()
+        Snackbar.make(
+            binding.root,
+            "Salvando em Downloads: $fileName",
+            Snackbar.LENGTH_LONG
+        ).show()
     }
 
     private fun showError(message: String) {
-        binding.progressBar.visibility    = View.GONE
-        binding.tvProgress.visibility     = View.GONE
-        binding.tvStatus.text             = message
-        binding.tvStatus.visibility       = View.VISIBLE
+        binding.progressBar.visibility     = View.GONE
+        binding.tvProgress.visibility      = View.GONE
+        binding.tvStatus.text              = message
+        binding.tvStatus.visibility        = View.VISIBLE
         binding.downloadButtons.visibility = if (currentMetadata != null) View.VISIBLE else View.GONE
-        binding.btnVerify.isEnabled       = true
+        binding.btnVerify.isEnabled        = true
         Snackbar.make(binding.root, message, Snackbar.LENGTH_LONG).show()
     }
 }

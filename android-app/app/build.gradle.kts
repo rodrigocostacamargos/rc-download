@@ -25,17 +25,6 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Injeta a API Key e URL do serviço local no BuildConfig
-        // Nunca hardcode esses valores no código-fonte
-        buildConfigField(
-            "String", "YOUTUBE_API_KEY",
-            "\"${localProperties.getProperty("YOUTUBE_API_KEY", "")}\""
-        )
-        buildConfigField(
-            "String", "LOCAL_SERVICE_URL",
-            // 10.0.2.2 aponta para localhost do host quando rodando no emulador Android
-            "\"${localProperties.getProperty("LOCAL_SERVICE_URL", "http://10.0.2.2:8080/")}\""
-        )
     }
 
     buildFeatures {
@@ -76,10 +65,12 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.kotlinx.coroutines.android)
 
-    // Retrofit + OkHttp (chamadas HTTP à YouTube API e ao serviço local)
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.converter.gson)
+    // OkHttp (downloader para NewPipe Extractor)
+    implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
+
+    // NewPipe Extractor (extração de streams do YouTube sem servidor)
+    implementation(libs.newpipe.extractor)
 
     // Room (histórico de downloads)
     implementation(libs.room.runtime)

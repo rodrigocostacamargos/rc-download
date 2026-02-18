@@ -1,7 +1,0 @@
-flask==3.0.3
-yt-dlp==2026.2.4
-# ffmpeg deve estar instalado no sistema (apt install ffmpeg / brew install ffmpeg)
-
-# Dependências de teste
-pytest==8.2.2
-pytest-cov==5.0.0

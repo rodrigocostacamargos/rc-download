@@ -17,9 +17,10 @@ data class VideoMetadata(
 
     /** Nome amigável da licença para exibição na UI. */
     val licenseDisplayName: String
-        get() = when (license) {
-            "creativeCommon" -> "Creative Commons (CC BY)"
-            "youtube"        -> "Licença padrão do YouTube"
-            else             -> license
+        get() = when {
+            license.contains("Creative Commons", ignoreCase = true) -> "Creative Commons"
+            license.contains("youtube", ignoreCase = true)          -> "Licença padrão do YouTube"
+            license == "creativeCommon"                              -> "Creative Commons (CC BY)"
+            else                                                     -> license
         }
 }
