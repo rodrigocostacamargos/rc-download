@@ -1,0 +1,22 @@
+# API keys e configurações locais — NUNCA commitar
+android-app/local.properties
+
+# Build Android
+android-app/.gradle/
+android-app/app/build/
+android-app/build/
+
+# Python
+local-service/.venv/
+local-service/__pycache__/
+local-service/**/__pycache__/
+local-service/.coverage
+local-service/htmlcov/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Downloads gerados
+~/Downloads/rc-download/

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RC Download</string>
+    <string name="hint_url">Cole o link do YouTube aqui</string>
+    <string name="btn_verify">Verificar metadados</string>
+    <string name="btn_download_video">Baixar Vídeo</string>
+    <string name="btn_download_audio">Baixar Áudio</string>
+    <string name="btn_reset">Nova consulta</string>
+    <string name="btn_history">Ver histórico</string>
+</resources>
