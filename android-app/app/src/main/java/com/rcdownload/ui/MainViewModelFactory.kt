@@ -19,10 +19,8 @@ class MainViewModelFactory(private val context: Context) : ViewModelProvider.Fac
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        val client = buildOkHttpClient()
-
         Log.i(TAG, "Inicializando NewPipe Extractor")
-        NewPipe.init(DownloaderImpl(client))
+        NewPipe.init(DownloaderImpl(buildOkHttpClientBuilder()))
 
         val repository = VideoRepository(
             downloadHistoryDao = AppDatabase.getInstance(context).downloadHistoryDao()
@@ -31,13 +29,12 @@ class MainViewModelFactory(private val context: Context) : ViewModelProvider.Fac
         return MainViewModel(repository) as T
     }
 
-    private fun buildOkHttpClient(): OkHttpClient {
+    private fun buildOkHttpClientBuilder(): OkHttpClient.Builder {
         val logging = HttpLoggingInterceptor { msg -> Log.d(TAG, msg) }.apply {
             level = HttpLoggingInterceptor.Level.BASIC
         }
         return OkHttpClient.Builder()
             .addInterceptor(logging)
-            .build()
     }
 
     companion object {

@@ -80,10 +80,12 @@ Idle
 
 ### NewPipe Extractor — como funciona
 
-1. `NewPipe.init(DownloaderImpl(okHttpClient))` — inicializado em `MainViewModelFactory`
+1. `NewPipe.init(DownloaderImpl(builder))` — inicializado em `MainViewModelFactory`
 2. `StreamInfo.getInfo(service, url)` — faz chamadas HTTP ao YouTube e parseia a resposta
 3. `streamInfo.videoStreams` — streams progressivas MP4 (vídeo+áudio, até 720p)
 4. `streamInfo.audioStreams` — streams de áudio M4A (AAC)
+
+> **Atenção:** o `DownloaderImpl` **deve** incluir o header `User-Agent` de browser em todas as requisições. Sem ele, o YouTube InnerTube API retorna 400 e o NewPipe lança `ExtractionException: Initial WEB player response is not valid`. Ver `DownloaderImpl.kt` e `KNOWN_ISSUES.md`.
 
 **Streams progressivas** contêm vídeo e áudio já mesclados — não é necessário ffmpeg.
 **M4A (AAC)** é reproduzido nativamente pelo Android — não é necessário converter para MP3.
